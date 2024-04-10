@@ -509,8 +509,6 @@ class EnemyGenerator:
         """
         canvas_width = self.game.canvas.winfo_width()
         canvas_height = self.game.canvas.winfo_height()
-        player_x = self.game.player.x
-        player_y = self.game.player.y
         level_mod = self.level % 4
         if level_mod == 1:
             new_enemy = RandomWalkEnemy(self.__game, 20, "green")
@@ -524,8 +522,10 @@ class EnemyGenerator:
             new_enemy.y = random.randint(0, canvas_height)
             new_enemy.generate_fake_homes()
 
+        player_x = self.game.player.x
+        player_y = self.game.player.y
         # to make sure that the enemy will not spawn too close to the player
-        min_distance = max(250 - (self.level * 10), 100)
+        min_distance = max(300 - (self.level * 5), 100)
         if level_mod == 3:
             random_x = self.game.home.x + 50
             random_y = self.game.home.y + 50
