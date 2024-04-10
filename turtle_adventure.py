@@ -3,9 +3,10 @@ The turtle_adventure module maintains all classes related to the Turtle's
 adventure game.
 """
 import random
+import math
+
 from turtle import RawTurtle
 from gamelib import Game, GameElement
-import math
 
 
 class TurtleGameElement(GameElement):
@@ -244,12 +245,6 @@ class Enemy(TurtleGameElement):
         )
 
 
-# TODO
-# * Define your enemy classes
-# * Implement all methods required by the GameElement abstract class
-# * Define enemy's update logic in the update() method
-# * Check whether the player hits this enemy, then call the
-#   self.game.game_over_lose() method in the TurtleAdventureGame class.
 class DemoEnemy(Enemy):
     """
     Demo enemy
@@ -283,6 +278,9 @@ class DemoEnemy(Enemy):
 
 
 class RandomWalkEnemy(Enemy):
+    """
+    Enemy walk randomly
+    """
     def __init__(self,
                  game: "TurtleAdventureGame",
                  size: int,
@@ -338,6 +336,9 @@ class RandomWalkEnemy(Enemy):
 
 
 class ChasingEnemy(Enemy):
+    """
+    Enemy will try chasing the player. Try not to move this enemy too fast, otherwise the player will have no chance to win.
+    """
     def __init__(self,
                  game: "TurtleAdventureGame",
                  size: int,
@@ -368,13 +369,43 @@ class ChasingEnemy(Enemy):
 
 
 class FencingEnemy(Enemy):
+    """
+    Enemy  will walk around the home in a square-like pattern.
+    """
     def __init__(self,
                  game: "TurtleAdventureGame",
                  size: int,
                  color: str):
         super().__init__(game, size, color)
         self.__id = None
-        self.speed = 3
+        self.speed = 5
+        self.directions = ["right", "down", "left", "up"]
+        self.current_direction_index = 0
+        self.distance_from_home = 50
+        self.x = self.game.home.x + self.distance_from_home
+        self.y = self.game.home.y + self.distance_from_home
+        self.update()
+
+    def update(self):
+        direction = self.directions[self.current_direction_index]
+        if direction == "right":
+            self.x += self.speed
+            if self.x >= self.game.home.x + self.distance_from_home:
+                self.current_direction_index = (self.current_direction_index + 1) % 4
+        elif direction == "down":
+            self.y += self.speed
+            if self.y >= self.game.home.y + self.distance_from_home:
+                self.current_direction_index = (self.current_direction_index + 1) % 4
+        elif direction == "left":
+            self.x -= self.speed
+            if self.x <= self.game.home.x - self.distance_from_home:
+                self.current_direction_index = (self.current_direction_index + 1) % 4
+        elif direction == "up":
+            self.y -= self.speed
+            if self.y <= self.game.home.y - self.distance_from_home:
+                self.current_direction_index = (self.current_direction_index + 1) % 4
+        if self.hits_player():
+            self.game.game_over_lose()
 
     def create(self) -> None:
         self.__id = self.canvas.create_oval(0, 0, 0, 0, fill="red")
@@ -391,12 +422,60 @@ class FencingEnemy(Enemy):
 
 
 class BossEnemy(Enemy):
+    """
+    Enemy will chase us but will get faster and bigger every second and with idea to generate multiple home with the
+    fake home too
+    """
+    @property
+    def size(self):
+        return self._size
+
     def __init__(self,
                  game: "TurtleAdventureGame",
                  size: int,
                  color: str):
         super().__init__(game, size, color)
         self.__id = None
+        self.size = size
+        self.num_fake_homes = 5
+        self.speed = 3
+        self.growth_rate = 0.7
+
+    def update(self) -> None:
+        angle = math.atan2(self.game.player.y - self.y, self.game.player.x - self.x)
+        self.x += self.speed * math.cos(angle)
+        self.y += self.speed * math.sin(angle)
+        self.size += self.growth_rate
+        self.speed += 0.001
+        if self.hits_player():
+            self.game.game_over_lose()
+
+    def generate_fake_homes(self):
+        canvas_width = self.game.canvas.winfo_width()
+        canvas_height = self.game.canvas.winfo_height()
+
+        for _ in range(self.num_fake_homes):
+            fake_home_x = random.randint(0, canvas_width)
+            fake_home_y = random.randint(0, canvas_height)
+            fake_home = Home(self.game, (fake_home_x, fake_home_y), 20)
+            self.game.add_element(fake_home)
+
+    def create(self) -> None:
+        self.__id = self.canvas.create_oval(0, 0, 0, 0, fill="black")
+
+    def render(self) -> None:
+        self.canvas.coords(self.__id,
+                           self.x - self.size / 2,
+                           self.y - self.size / 2,
+                           self.x + self.size / 2,
+                           self.y + self.size / 2)
+
+    def delete(self) -> None:
+        self.canvas.delete(self.__id)
+
+    @size.setter
+    def size(self, value):
+        self._size = value
 
 
 class EnemyGenerator:
@@ -428,6 +507,10 @@ class EnemyGenerator:
         """
         Create a new enemy, possibly based on the game level
         """
+        canvas_width = self.game.canvas.winfo_width()
+        canvas_height = self.game.canvas.winfo_height()
+        player_x = self.game.player.x
+        player_y = self.game.player.y
         level_mod = self.level % 4
         if level_mod == 1:
             new_enemy = RandomWalkEnemy(self.__game, 20, "green")
@@ -437,22 +520,25 @@ class EnemyGenerator:
             new_enemy = FencingEnemy(self.__game, 20, "blue")
         else:
             new_enemy = BossEnemy(self.__game, 20, "black")
-        canvas_width = self.game.canvas.winfo_width()
-        canvas_height = self.game.canvas.winfo_height()
-        player_x = self.game.player.x
-        player_y = self.game.player.y
+            new_enemy.x = random.randint(0, canvas_width)
+            new_enemy.y = random.randint(0, canvas_height)
+            new_enemy.generate_fake_homes()
+
         # to make sure that the enemy will not spawn too close to the player
         min_distance = max(250 - (self.level * 10), 100)
-        while True:
-            random_x = random.randint(0, canvas_width)
-            random_y = random.randint(0, canvas_height)
-            distance_to_player = ((random_x - player_x) ** 2 + (random_y - player_y) ** 2) ** 0.5
-            if distance_to_player >= min_distance:
-                break
+        if level_mod == 3:
+            random_x = self.game.home.x + 50
+            random_y = self.game.home.y + 50
+        else:
+            while True:
+                random_x = random.randint(0, canvas_width)
+                random_y = random.randint(0, canvas_height)
+                distance_to_player = ((random_x - player_x) ** 2 + (random_y - player_y) ** 2) ** 0.5
+                if distance_to_player >= min_distance:
+                    break
 
         new_enemy.x = random_x
         new_enemy.y = random_y
-
         self.game.add_enemy(new_enemy)
         # the more level you put the harder it is
         self.game.after(max(200, 1000 - self.level * 10), self.create_enemy)
